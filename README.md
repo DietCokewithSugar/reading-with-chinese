@@ -139,7 +139,13 @@ pdf2zh 的运行栈很吃内存：仅导入就约 170MB，加上版面模型与�
 | `RWC_MAX_CONCURRENCY` | `2` | 同时翻译的块数上限（受内存约束；无论前端请求多少都会被限制到此值） |
 | `RWC_MAX_THREAD` | `16` | 单块内并发 API 请求上限（**加速主力**，内存开销低） |
 | `RWC_MAX_ACTIVE_JOBS` | `1` | 整个实例同时运行的翻译任务数；超出返回 429 |
+| `RWC_BABELDOC_STALL` | `300` | BabelDOC 超过该秒数无进度即判定卡死并报错（防止永久卡住） |
+| `RWC_JOB_STALE_SECONDS` | `2400` | 运行超过该秒数的任务视为僵尸，不再占用并发名额 |
 | `OMP_NUM_THREADS` | `1` | 限制 onnxruntime 线程，降低内存 |
+
+> BabelDOC 在服务器（无终端）环境下已关闭 rich 实时进度条（`use_rich_pbar=False`）以避免
+> 后台线程卡死；进度仍通过事件正常上报。若 BabelDOC 仍频繁卡住或 OOM，长文档建议改用更省内存的
+> `pdf2zh` 引擎。
 
 **2 GB 实例的最快配置**已作为镜像默认值：`并发块数=2`、`块内并发=16`（实际并发 API ≈ 32），
 配合界面里 `每块页数=4`、模型选 `deepseek-chat`。内存更大的实例可调高 `RWC_MAX_CONCURRENCY`

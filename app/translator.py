@@ -406,23 +406,42 @@ def translate_pdf_babeldoc(
             no_dual=False,
             no_mono=False,
             qps=max(1, concurrency),
+            # No TTY on a server: the rich live progress bar can hang/garble in
+            # a background thread, so drive progress purely from events.
+            use_rich_pbar=False,
         )
 
         result = {}
+        # If BabelDOC goes this long without emitting any event, treat the job
+        # as stuck (rather than blocking the instance forever).
+        stall = float(os.getenv("RWC_BABELDOC_STALL", "300"))
 
         async def _run():
-            async for event in bh.async_translate(config):
-                if cancel_event and cancel_event.is_set():
-                    raise RuntimeError("cancelled")
-                etype = event.get("type")
-                if etype == "progress_update" and progress_cb:
-                    pct = float(event.get("overall_progress", 0) or 0)
-                    pct = max(0.0, min(100.0, pct))  # BabelDOC can overshoot 100
-                    progress_cb(int(total_pages * pct / 100), total_pages)
-                elif etype == "error":
-                    raise RuntimeError(str(event.get("error") or "BabelDOC error"))
-                elif etype == "finish":
-                    result["r"] = event["translate_result"]
+            agen = bh.async_translate(config)
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(agen.__anext__(), timeout=stall)
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError as exc:
+                        raise RuntimeError(
+                            f"BabelDOC 超过 {int(stall)}s 无进度，已判定为卡死。"
+                            "建议改用 pdf2zh 引擎，或减小 PDF/降低并发后重试。"
+                        ) from exc
+                    if cancel_event and cancel_event.is_set():
+                        raise RuntimeError("cancelled")
+                    etype = event.get("type")
+                    if etype == "progress_update" and progress_cb:
+                        pct = max(0.0, min(100.0, float(event.get("overall_progress", 0) or 0)))
+                        progress_cb(int(total_pages * pct / 100), total_pages)
+                    elif etype == "error":
+                        raise RuntimeError(str(event.get("error") or "BabelDOC error"))
+                    elif etype == "finish":
+                        result["r"] = event["translate_result"]
+                        break  # don't wait on any post-finish cleanup
+            finally:
+                await agen.aclose()
 
         asyncio.run(_run())
 

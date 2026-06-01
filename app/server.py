@@ -54,6 +54,9 @@ MAX_CONCURRENCY = max(1, int(os.getenv("RWC_MAX_CONCURRENCY", "2")))
 MAX_THREAD = max(1, int(os.getenv("RWC_MAX_THREAD", "4")))
 # Cap how many translation jobs run at once across all users on this instance.
 MAX_ACTIVE_JOBS = max(1, int(os.getenv("RWC_MAX_ACTIVE_JOBS", "1")))
+# A job still "running" after this long is presumed dead and stops blocking new
+# work (defensive: the BabelDOC watchdog should fail a stuck job much sooner).
+JOB_STALE_SECONDS = max(60, int(os.getenv("RWC_JOB_STALE_SECONDS", "2400")))
 
 
 @dataclass
@@ -338,8 +341,15 @@ async def create_translation(
 
     # Reject new work if the instance is already at its concurrent-job limit,
     # rather than piling on more memory pressure and triggering an OOM 502.
+    # Jobs that have been "running" for longer than JOB_STALE_SECONDS are
+    # treated as dead (e.g. their worker thread died on an OOM restart) so a
+    # zombie job can never lock the instance out permanently.
+    now = time.time()
     with JOBS_LOCK:
-        active = sum(1 for j in JOBS.values() if j.status in ("pending", "running"))
+        active = sum(
+            1 for j in JOBS.values()
+            if j.status in ("pending", "running") and now - j.created_at < JOB_STALE_SECONDS
+        )
     if active >= MAX_ACTIVE_JOBS:
         raise HTTPException(
             status_code=429,
