@@ -1,0 +1,10 @@
+# Core translation engine (handles layout-preserving PDF translation + DeepSeek)
+pdf2zh==1.9.11
+
+# Web server
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# PDF splitting / merging
+PyMuPDF>=1.25
