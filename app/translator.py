@@ -33,6 +33,34 @@ import fitz  # PyMuPDF
 from pdf2zh.doclayout import OnnxModel
 from pdf2zh.high_level import translate_stream
 
+
+# --------------------------------------------------------------------------- #
+# numpy compatibility shim.
+# --------------------------------------------------------------------------- #
+# BabelDOC still calls np.fromstring(pix.samples, np.uint8) in its layout /
+# table / ocr code, but numpy >= 2.0 removed the binary mode of fromstring and
+# now raises ("The binary mode of fromstring is removed, use frombuffer
+# instead"). Transparently route binary calls to np.frombuffer -- behaviour is
+# identical, so this is a pure fix with no regression. (pdf2zh already uses
+# frombuffer, so it is unaffected.)
+def _install_numpy_fromstring_shim() -> None:
+    import numpy as np
+
+    if getattr(np.fromstring, "_rwc_patched", False):
+        return
+    _orig = np.fromstring
+
+    def fromstring(string, dtype=float, count=-1, sep=""):
+        if sep == "" and isinstance(string, (bytes, bytearray, memoryview)):
+            return np.frombuffer(string, dtype=dtype, count=count)
+        return _orig(string, dtype=dtype, count=count, sep=sep)
+
+    fromstring._rwc_patched = True
+    np.fromstring = fromstring
+
+
+_install_numpy_fromstring_shim()
+
 # --------------------------------------------------------------------------- #
 # Shared layout model (downloaded once on first use, then cached on disk).
 # --------------------------------------------------------------------------- #
@@ -319,6 +347,7 @@ def _ensure_babeldoc_init() -> None:
     if not _babeldoc_inited:
         with _babeldoc_lock:
             if not _babeldoc_inited:
+                _install_numpy_fromstring_shim()  # BabelDOC needs the shim
                 import babeldoc.high_level as bh
 
                 bh.init()  # one-time asset/model setup (needs network first run)

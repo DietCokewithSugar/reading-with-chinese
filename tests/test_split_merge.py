@@ -123,6 +123,17 @@ def test_figure_unlock_delegates_unknown_attrs():
     assert proxy.stride == 32
 
 
+def test_numpy_fromstring_shim_handles_binary():
+    # The shim (installed on import of app.translator) must make BabelDOC's
+    # np.fromstring(bytes, uint8) pattern work on numpy >= 2.0.
+    import numpy as np
+
+    arr = np.fromstring(b"\x01\x02\x03\x04", np.uint8)
+    assert arr.tolist() == [1, 2, 3, 4]
+    # Text mode must still behave normally.
+    assert np.fromstring("1 2 3", dtype=int, sep=" ").tolist() == [1, 2, 3]
+
+
 if __name__ == "__main__":
     import pytest
 
