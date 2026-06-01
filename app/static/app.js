@@ -10,6 +10,8 @@ const els = {
   settingsToggle: $("settings-toggle"),
   apiKey: $("api-key"),
   modelName: $("model-name"),
+  engine: $("engine"),
+  translateFigures: $("translate-figures"),
   langIn: $("lang-in"),
   langOut: $("lang-out"),
   chunkSize: $("chunk-size"),
@@ -40,7 +42,8 @@ const els = {
 // Settings persistence (localStorage)
 // --------------------------------------------------------------------------- //
 const SETTINGS_KEYS = [
-  "apiKey", "modelName", "langIn", "langOut", "chunkSize", "concurrency", "thread",
+  "apiKey", "modelName", "engine", "langIn", "langOut",
+  "chunkSize", "concurrency", "thread",
 ];
 const STORE_KEY = "rwc.settings.v1";
 
@@ -50,17 +53,22 @@ function loadSettings() {
   for (const key of SETTINGS_KEYS) {
     if (saved[key] !== undefined && els[key]) els[key].value = saved[key];
   }
+  if (saved.translateFigures !== undefined && els.translateFigures) {
+    els.translateFigures.checked = !!saved.translateFigures;
+  }
 }
 
 function saveSettings() {
   const data = {};
   for (const key of SETTINGS_KEYS) if (els[key]) data[key] = els[key].value;
+  if (els.translateFigures) data.translateFigures = els.translateFigures.checked;
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
 }
 
 for (const key of SETTINGS_KEYS) {
   if (els[key]) els[key].addEventListener("change", saveSettings);
 }
+if (els.translateFigures) els.translateFigures.addEventListener("change", saveSettings);
 
 els.settingsToggle.addEventListener("click", () => {
   els.settings.classList.toggle("hidden");
@@ -160,6 +168,8 @@ async function startTranslation() {
   form.append("chunk_size", els.chunkSize.value || "8");
   form.append("concurrency", els.concurrency.value || "6");
   form.append("thread", els.thread.value || "4");
+  form.append("engine", els.engine.value || "pdf2zh");
+  form.append("translate_figures", els.translateFigures.checked ? "true" : "false");
 
   setBusy(true);
   els.progressBar.style.width = "0%";

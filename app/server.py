@@ -109,18 +109,31 @@ def _run_job(job: Job, params: dict) -> None:
             if total:
                 job.pages_total = total
 
-        mono, dual = translator.translate_pdf(
-            source,
-            api_key=params["api_key"],
-            model_name=params["model_name"],
-            lang_in=params["lang_in"],
-            lang_out=params["lang_out"],
-            chunk_size=params["chunk_size"],
-            concurrency=params["concurrency"],
-            thread=params["thread"],
-            progress_cb=progress,
-            cancel_event=job.cancel_event,
-        )
+        if params["engine"] == "babeldoc":
+            mono, dual = translator.translate_pdf_babeldoc(
+                source,
+                api_key=params["api_key"],
+                model_name=params["model_name"],
+                lang_in=params["lang_in"],
+                lang_out=params["lang_out"],
+                concurrency=params["concurrency"],
+                progress_cb=progress,
+                cancel_event=job.cancel_event,
+            )
+        else:
+            mono, dual = translator.translate_pdf(
+                source,
+                api_key=params["api_key"],
+                model_name=params["model_name"],
+                lang_in=params["lang_in"],
+                lang_out=params["lang_out"],
+                chunk_size=params["chunk_size"],
+                concurrency=params["concurrency"],
+                thread=params["thread"],
+                translate_figures=params["translate_figures"],
+                progress_cb=progress,
+                cancel_event=job.cancel_event,
+            )
         if job.cancel_event.is_set():
             job.status = "cancelled"
             return
@@ -157,6 +170,8 @@ async def create_translation(
     chunk_size: int = Form(8),
     concurrency: int = Form(6),
     thread: int = Form(4),
+    engine: str = Form("pdf2zh"),
+    translate_figures: bool = Form(False),
 ) -> JSONResponse:
     if not api_key.strip():
         raise HTTPException(status_code=400, detail="DeepSeek API key is required")
@@ -198,6 +213,8 @@ async def create_translation(
         # Clamp to the instance memory budget regardless of what the UI sent.
         "concurrency": min(max(1, int(concurrency)), MAX_CONCURRENCY),
         "thread": min(max(1, int(thread)), MAX_THREAD),
+        "engine": "babeldoc" if str(engine).lower() == "babeldoc" else "pdf2zh",
+        "translate_figures": bool(translate_figures),
     }
 
     with JOBS_LOCK:

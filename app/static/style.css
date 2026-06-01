@@ -86,6 +86,9 @@ button, .ghost-btn { font-family: inherit; }
   outline: none;
 }
 .field input:focus, .field select:focus { border-color: var(--accent); }
+.checkbox-field { flex-direction: row; align-items: flex-start; gap: 10px; }
+.checkbox-field input { width: 18px; height: 18px; margin-top: 2px; flex: none; }
+.checkbox-field span { color: var(--text); }
 .lang-row { display: flex; align-items: center; gap: 8px; }
 .lang-row select { flex: 1; }
 .arrow { color: var(--muted); }

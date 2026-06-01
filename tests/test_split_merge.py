@@ -77,6 +77,52 @@ def test_merge_is_order_sensitive():
     assert _markers(merged) != [f"PAGE-{i}" for i in range(6)]
 
 
+class _FakeBox:
+    def __init__(self, cls):
+        self.cls = cls
+        self.xyxy = [0, 0, 1, 1]
+        self.conf = 0.9
+
+
+class _FakeResult:
+    def __init__(self, names, classes):
+        self.names = names
+        self.boxes = [_FakeBox(c) for c in classes]
+
+
+class _FakeBase:
+    """Stand-in layout model returning preset detections."""
+
+    NAMES = {0: "title", 1: "plain text", 2: "abandon", 3: "figure",
+             4: "figure_caption", 5: "table", 8: "isolate_formula"}
+
+    def __init__(self, classes):
+        self._classes = classes
+
+    def predict(self, *a, **k):
+        return [_FakeResult(self.NAMES, self._classes)]
+
+
+def test_figure_unlock_relabels_figure_and_table_only():
+    # figure(3) and table(5) -> body text(1); formula(8) and text(1) untouched.
+    base = _FakeBase([3, 5, 8, 1])
+    proxy = translator._FigureUnlockModel(base)
+    res = proxy.predict()[0]
+    got = [int(b.cls) for b in res.boxes]
+    names = [res.names[c] for c in got]
+    assert names[0] == "plain text"   # was figure
+    assert names[1] == "plain text"   # was table
+    assert names[2] == "isolate_formula"  # formula preserved
+    assert names[3] == "plain text"   # already text, unchanged
+
+
+def test_figure_unlock_delegates_unknown_attrs():
+    base = _FakeBase([3])
+    base.stride = 32  # arbitrary attribute that must pass through
+    proxy = translator._FigureUnlockModel(base)
+    assert proxy.stride == 32
+
+
 if __name__ == "__main__":
     import pytest
 

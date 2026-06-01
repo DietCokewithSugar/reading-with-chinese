@@ -35,6 +35,19 @@
       </label>
 
       <label class="field">
+        <span>翻译引擎</span>
+        <select id="engine">
+          <option value="pdf2zh">pdf2zh（默认·稳定）</option>
+          <option value="babeldoc">BabelDOC（实验性·更强版面）</option>
+        </select>
+      </label>
+
+      <label class="field full checkbox-field">
+        <input id="translate-figures" type="checkbox" />
+        <span>同时翻译图表内文字 <em>（翻译 figure / table 区域内的可选文本；公式与照片不受影响，复杂版面可能轻微错位。仅对 pdf2zh 引擎生效）</em></span>
+      </label>
+
+      <label class="field">
         <span>源语言 → 目标语言</span>
         <div class="lang-row">
           <select id="lang-in">
