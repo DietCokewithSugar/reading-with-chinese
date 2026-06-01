@@ -88,6 +88,28 @@ FastAPI (app/server.py)
 | `GET` | `/api/jobs/{id}/file/{mono\|dual}` | 预览/下载译文（`?download=1` 触发下载） |
 | `GET` | `/api/health` | 健康检查 + 模型是否就绪 |
 
+## 部署
+
+> ⚠️ **不要用 Vercel / Netlify Functions 等 Serverless 平台。** 本应用依赖体积 >1GB
+> （超过 Lambda 500MB 限制），且需要跑数分钟的后台翻译任务、共享内存任务表与本地磁盘存储 ——
+> 这些都与无状态、短时的 Serverless 函数模型冲突。它需要一个**长期运行的容器/服务器**。
+
+推荐用容器平台：**Render / Railway / Koyeb / Fly.io / Hugging Face Spaces (Docker)**，
+或任意 VPS。仓库已提供 `Dockerfile`：
+
+```bash
+# 本地或任意 VPS
+docker build -t reading-with-chinese .
+docker run -p 8000:8000 reading-with-chinese
+# 打开 http://localhost:8000
+```
+
+平台要点：
+- **Render / Railway / Koyeb**：连上 GitHub 仓库，选 Docker，平台会注入 `$PORT`（已自动适配）。
+- **Fly.io**：`fly launch`（用本仓库 Dockerfile），建议挂一个持久卷到模型缓存目录避免冷启动重下模型。
+- 镜像已做瘦身：移除了 GUI 版 OpenCV 与 pdf2zh 自带的 gradio（本应用用自己的前端）。
+- 反向代理（Nginx 等）记得放开上传大小限制（如 `client_max_body_size 0;`）。
+
 ## 测试
 
 ```bash
