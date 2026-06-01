@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reading with Chinese · PDF 翻译</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">译</span>
+      <div>
+        <h1>Reading with Chinese</h1>
+        <p class="subtitle">基于 PDFMathTranslate · DeepSeek 驱动的在线 PDF 翻译</p>
+      </div>
+    </div>
+    <button id="settings-toggle" class="ghost-btn" type="button">⚙ 设置</button>
+  </header>
+
+  <!-- Settings drawer -->
+  <section id="settings" class="settings hidden">
+    <div class="settings-grid">
+      <label class="field full">
+        <span>DeepSeek API Key <em>（仅保存在本地浏览器）</em></span>
+        <input id="api-key" type="password" placeholder="sk-..." autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>模型</span>
+        <select id="model-name">
+          <option value="deepseek-chat">deepseek-chat</option>
+          <option value="deepseek-reasoner">deepseek-reasoner</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>源语言 → 目标语言</span>
+        <div class="lang-row">
+          <select id="lang-in">
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+          </select>
+          <span class="arrow">→</span>
+          <select id="lang-out">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+          </select>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>每块页数 <em>（长 PDF 自动切分）</em></span>
+        <input id="chunk-size" type="number" min="1" max="50" value="8" />
+      </label>
+
+      <label class="field">
+        <span>并发块数 <em>（同时翻译几块·受服务器内存上限约束）</em></span>
+        <input id="concurrency" type="number" min="1" max="20" value="2" />
+      </label>
+
+      <label class="field">
+        <span>块内并发请求</span>
+        <input id="thread" type="number" min="1" max="16" value="4" />
+      </label>
+    </div>
+    <p class="hint">设置会自动保存到本机浏览器；API Key 不会上传或长期存储在服务器。</p>
+  </section>
+
+  <main class="workspace">
+    <!-- Upload / control bar -->
+    <div class="controlbar">
+      <div id="dropzone" class="dropzone">
+        <input id="file-input" type="file" accept="application/pdf" hidden />
+        <span class="dz-icon">📄</span>
+        <span class="dz-text">点击或拖入 PDF 文件</span>
+        <span id="file-name" class="dz-name"></span>
+      </div>
+      <button id="translate-btn" class="primary-btn" type="button" disabled>开始翻译</button>
+      <button id="cancel-btn" class="ghost-btn hidden" type="button">取消</button>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-wrap" class="progress-wrap hidden">
+      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+      <span id="progress-label" class="progress-label"></span>
+    </div>
+
+    <!-- Dual preview panes -->
+    <div class="panes">
+      <div class="pane">
+        <div class="pane-head"><span>原文</span></div>
+        <iframe id="src-frame" class="pdf-frame" title="原文预览"></iframe>
+        <div id="src-empty" class="empty">上传后在此预览原始 PDF</div>
+      </div>
+      <div class="pane">
+        <div class="pane-head">
+          <span>译文</span>
+          <div class="pane-actions">
+            <div class="seg" id="view-seg">
+              <button data-kind="mono" class="seg-btn active">仅译文</button>
+              <button data-kind="dual" class="seg-btn">双语对照</button>
+            </div>
+            <a id="download-link" class="ghost-btn small hidden" download>下载</a>
+          </div>
+        </div>
+        <iframe id="out-frame" class="pdf-frame" title="译文预览"></iframe>
+        <div id="out-empty" class="empty">翻译完成后在此预览并下载</div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
