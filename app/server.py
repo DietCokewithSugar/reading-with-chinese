@@ -12,6 +12,7 @@ Design goals (from the product brief):
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
 import time
@@ -35,6 +36,17 @@ WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # Jobs older than this are garbage-collected from disk.
 JOB_TTL_SECONDS = 6 * 60 * 60
+
+# Memory guards. The pdf2zh stack (onnxruntime + the layout model + per-page
+# image rendering) is memory-hungry, and every concurrent chunk worker holds a
+# copy of that working set. On small instances (e.g. Render's 512 MB tiers)
+# unbounded concurrency causes OOM restarts (HTTP 502). These caps clamp
+# whatever the browser requests so a small box stays within its RAM budget;
+# raise them via env vars on larger instances.
+MAX_CONCURRENCY = max(1, int(os.getenv("RWC_MAX_CONCURRENCY", "2")))
+MAX_THREAD = max(1, int(os.getenv("RWC_MAX_THREAD", "4")))
+# Cap how many translation jobs run at once across all users on this instance.
+MAX_ACTIVE_JOBS = max(1, int(os.getenv("RWC_MAX_ACTIVE_JOBS", "1")))
 
 
 @dataclass
@@ -151,6 +163,16 @@ async def create_translation(
 
     _gc_jobs()
 
+    # Reject new work if the instance is already at its concurrent-job limit,
+    # rather than piling on more memory pressure and triggering an OOM 502.
+    with JOBS_LOCK:
+        active = sum(1 for j in JOBS.values() if j.status in ("pending", "running"))
+    if active >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail="服务器正忙（已有翻译任务在进行），请稍后再试。",
+        )
+
     job = Job(id=uuid.uuid4().hex, filename=file.filename or "document.pdf")
     job.dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,8 +195,9 @@ async def create_translation(
         "lang_in": lang_in.strip() or "en",
         "lang_out": lang_out.strip() or "zh",
         "chunk_size": max(1, int(chunk_size)),
-        "concurrency": max(1, int(concurrency)),
-        "thread": max(1, int(thread)),
+        # Clamp to the instance memory budget regardless of what the UI sent.
+        "concurrency": min(max(1, int(concurrency)), MAX_CONCURRENCY),
+        "thread": min(max(1, int(thread)), MAX_THREAD),
     }
 
     with JOBS_LOCK:

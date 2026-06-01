@@ -110,6 +110,25 @@ docker run -p 8000:8000 reading-with-chinese
 - 镜像已做瘦身：移除了 GUI 版 OpenCV 与 pdf2zh 自带的 gradio（本应用用自己的前端）。
 - 反向代理（Nginx 等）记得放开上传大小限制（如 `client_max_body_size 0;`）。
 
+### 内存要求（重要）
+
+pdf2zh 的运行栈很吃内存：仅导入就约 170MB，加上版面模型与逐页图像渲染/推理，单次翻译峰值常达
+**500MB~1GB+**。因此：
+
+- **不要用 512MB 的实例**（如 Render Free / Starter）—— 会 OOM 重启并返回 502。
+- 建议 **≥ 2GB 内存**（如 Render **Standard**、Railway 加内存、Fly `shared-cpu-1x` 2GB）。
+
+应用内置了内存护栏（可用环境变量调整）：
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `RWC_MAX_CONCURRENCY` | `2` | 同时翻译的块数上限（无论前端请求多少都会被限制到此值） |
+| `RWC_MAX_ACTIVE_JOBS` | `1` | 整个实例同时运行的翻译任务数；超出返回 429 |
+| `RWC_MAX_THREAD` | `4` | 单块内段落级并发上限 |
+| `OMP_NUM_THREADS` | `1` | 限制 onnxruntime 线程，降低内存 |
+
+内存越大的实例可调高这些值换取速度（如 4GB 实例设 `RWC_MAX_CONCURRENCY=6`）。
+
 ## 测试
 
 ```bash

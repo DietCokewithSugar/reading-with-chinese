@@ -11,7 +11,15 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
-    PORT=8000
+    PORT=8000 \
+    # Keep onnxruntime/OpenMP from spawning a thread (and arena) per core,
+    # which needlessly inflates memory on small instances.
+    OMP_NUM_THREADS=1 \
+    ORT_DISABLE_ALL_OPTIMIZATION=0 \
+    # Memory guards (see app/server.py). Override on larger instances, e.g.
+    # RWC_MAX_CONCURRENCY=6 on a 4 GB box.
+    RWC_MAX_CONCURRENCY=2 \
+    RWC_MAX_ACTIVE_JOBS=1
 
 WORKDIR /app
 
