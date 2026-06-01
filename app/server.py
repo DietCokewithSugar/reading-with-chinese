@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import shutil
 import threading
@@ -31,9 +32,13 @@ from fastapi.staticfiles import StaticFiles
 from . import translator
 
 # --------------------------------------------------------------------------- #
-# Local on-disk storage (no database).
+# Local on-disk storage (no database). The job directory IS the source of
+# truth: results can always be reconstructed from disk, so they survive page
+# reloads and server restarts. Point RWC_DATA_DIR at a persistent disk (e.g. a
+# Render Disk) to also survive redeploys.
 # --------------------------------------------------------------------------- #
-WORK_DIR = Path(__file__).resolve().parent.parent / "data" / "jobs"
+_default_data = Path(__file__).resolve().parent.parent / "data" / "jobs"
+WORK_DIR = Path(os.getenv("RWC_DATA_DIR", str(_default_data)))
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # Jobs older than this are garbage-collected from disk.
@@ -98,6 +103,63 @@ def _gc_jobs() -> None:
         for job in stale:
             JOBS.pop(job.id, None)
             shutil.rmtree(job.dir, ignore_errors=True)
+
+
+def _write_meta(job: Job, engine: str) -> None:
+    """Persist a tiny sidecar so a job can be reconstructed from disk later.
+
+    This is not a database -- just enough metadata (original filename, engine)
+    to render nice download names and restore results after a reload/restart.
+    """
+    try:
+        (job.dir / "meta.json").write_text(
+            json.dumps({"filename": job.filename, "engine": engine,
+                        "created_at": job.created_at}),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 -- metadata is best-effort
+        pass
+
+
+def _load_job_from_disk(job_id: str) -> Optional[Job]:
+    """Rebuild a Job from its on-disk directory when it is not in memory."""
+    if not job_id or "/" in job_id or "\\" in job_id:
+        return None
+    jdir = WORK_DIR / job_id
+    if not jdir.is_dir():
+        return None
+
+    meta = {}
+    try:
+        meta = json.loads((jdir / "meta.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        pass
+
+    job = Job(id=job_id, filename=meta.get("filename") or "document.pdf")
+    if "created_at" in meta:
+        job.created_at = meta["created_at"]
+
+    mono = jdir / "translated.pdf"
+    dual = jdir / "bilingual.pdf"
+    if (mono.exists() and mono.stat().st_size > 0) or (dual.exists() and dual.stat().st_size > 0):
+        job.status = "done"
+        job.pages_done = job.pages_total = 1  # report 100% for restored results
+    elif (jdir / "source.pdf").exists():
+        # We have the upload but no result and no live worker -> it was
+        # interrupted (e.g. the server restarted mid-translation).
+        job.status = "error"
+        job.error = "任务被中断（可能因服务重启），请重新翻译。"
+    else:
+        return None
+    return job
+
+
+def _get_job(job_id: str) -> Optional[Job]:
+    """Return a live in-memory job, or reconstruct it from disk."""
+    job = JOBS.get(job_id)
+    if job is not None:
+        return job
+    return _load_job_from_disk(job_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -315,6 +377,7 @@ async def create_translation(
 
     with JOBS_LOCK:
         JOBS[job.id] = job
+    _write_meta(job, params["engine"])
 
     threading.Thread(target=_run_job, args=(job, params), daemon=True).start()
     return JSONResponse({"job_id": job.id})
@@ -322,7 +385,7 @@ async def create_translation(
 
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str) -> dict:
-    job = JOBS.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.to_dict()
@@ -330,7 +393,7 @@ def job_status(job_id: str) -> dict:
 
 @app.post("/api/jobs/{job_id}/cancel")
 def cancel_job(job_id: str) -> dict:
-    job = JOBS.get(job_id)
+    job = JOBS.get(job_id)  # only live jobs can be cancelled
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job.cancel_event.set()
@@ -342,13 +405,13 @@ _KINDS = {"mono": "translated.pdf", "dual": "bilingual.pdf"}
 
 @app.get("/api/jobs/{job_id}/file/{kind}")
 def job_file(job_id: str, kind: str, download: int = 0):
-    job = JOBS.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if kind not in _KINDS:
         raise HTTPException(status_code=400, detail="Unknown file kind")
     path = job.dir / _KINDS[kind]
-    if not path.exists():
+    if not path.exists() or path.stat().st_size == 0:
         raise HTTPException(status_code=404, detail="File not ready")
 
     stem = Path(job.filename).stem

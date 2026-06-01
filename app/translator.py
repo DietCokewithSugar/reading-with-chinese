@@ -435,6 +435,16 @@ def translate_pdf_babeldoc(
 
         mono = _read(getattr(r, "mono_pdf_path", None))
         dual = _read(getattr(r, "dual_pdf_path", None))
+        if not mono and not dual:
+            raise RuntimeError(
+                "BabelDOC 未生成输出文件（mono/dual 均为空）。"
+                f"mono_pdf_path={getattr(r, 'mono_pdf_path', None)!r}, "
+                f"dual_pdf_path={getattr(r, 'dual_pdf_path', None)!r}"
+            )
+        # If one variant is missing, fall back to the other so the user still
+        # gets a viewable result.
+        mono = mono or dual
+        dual = dual or mono
         if progress_cb:
             progress_cb(total_pages, total_pages)
         return mono, dual

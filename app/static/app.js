@@ -132,6 +132,8 @@ els.dropzone.addEventListener("drop", (e) => {
 let currentJobId = null;
 let pollTimer = null;
 let currentKind = "mono";
+let resultReady = false;  // true once translated files exist on the server
+const LAST_JOB_KEY = "rwc.lastJob";
 
 function setBusy(busy) {
   els.translateBtn.disabled = busy || !selectedFile;
@@ -187,6 +189,8 @@ async function startTranslation() {
     }
     const { job_id } = await resp.json();
     currentJobId = job_id;
+    resultReady = false;
+    try { localStorage.setItem(LAST_JOB_KEY, job_id); } catch (_) {}
     pollStatus();
   } catch (err) {
     setBusy(false);
@@ -223,9 +227,10 @@ function pollStatus() {
   }, 900);
 }
 
-function onDone(job) {
+function onDone(job, opts = {}) {
   setBusy(false);
-  toast("翻译完成 🎉", "ok");
+  resultReady = true;
+  if (!opts.silent) toast("翻译完成 🎉", "ok");
   showResult(currentKind);
 }
 
@@ -244,8 +249,10 @@ els.viewSeg.addEventListener("click", (e) => {
   if (!btn) return;
   els.viewSeg.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
-  if (currentJobId) showResult(btn.dataset.kind);
-  else currentKind = btn.dataset.kind;
+  currentKind = btn.dataset.kind;
+  // Only fetch the file once the translation has actually finished, otherwise
+  // we'd hit the not-yet-written file and show "File not ready".
+  if (currentJobId && resultReady) showResult(currentKind);
 });
 
 els.translateBtn.addEventListener("click", startTranslation);
@@ -258,10 +265,38 @@ els.cancelBtn.addEventListener("click", async () => {
   toast("正在取消…", "");
 });
 
+// Restore the last job after a reload / reopening the page, so a finished
+// translation can be viewed without staying on the page during processing.
+async function restoreLastJob() {
+  let jobId = null;
+  try { jobId = localStorage.getItem(LAST_JOB_KEY); } catch (_) {}
+  if (!jobId) return;
+  try {
+    const resp = await fetch(`/api/jobs/${jobId}`);
+    if (resp.status === 401) { location.href = "/login"; return; }
+    if (!resp.ok) { localStorage.removeItem(LAST_JOB_KEY); return; }
+    const job = await resp.json();
+    currentJobId = jobId;
+    if (job.status === "done") {
+      onDone(job, { silent: true });
+    } else if (job.status === "running" || job.status === "pending") {
+      setBusy(true);
+      pollStatus();
+    } else {
+      // error / cancelled -> nothing to restore
+      localStorage.removeItem(LAST_JOB_KEY);
+      currentJobId = null;
+    }
+  } catch (_) {
+    /* ignore restore failures */
+  }
+}
+
 // --------------------------------------------------------------------------- //
 // Boot
 // --------------------------------------------------------------------------- //
 loadSettings();
+restoreLastJob();
 fetch("/api/health")
   .then((r) => r.json())
   .then((h) => {
