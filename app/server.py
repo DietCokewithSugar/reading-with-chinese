@@ -65,14 +65,17 @@ class Job:
         return WORK_DIR / self.id
 
     def to_dict(self) -> dict:
+        # Clamp for display: some engines (BabelDOC) report a multi-stage
+        # overall progress that can momentarily exceed 100%.
+        done = min(self.pages_done, self.pages_total) if self.pages_total else self.pages_done
         pct = 0
         if self.pages_total:
-            pct = round(100 * self.pages_done / self.pages_total)
+            pct = min(100, round(100 * self.pages_done / self.pages_total))
         return {
             "id": self.id,
             "filename": self.filename,
             "status": self.status,
-            "pages_done": self.pages_done,
+            "pages_done": done,
             "pages_total": self.pages_total,
             "percent": pct,
             "error": self.error,

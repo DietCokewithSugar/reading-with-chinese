@@ -417,6 +417,7 @@ def translate_pdf_babeldoc(
                 etype = event.get("type")
                 if etype == "progress_update" and progress_cb:
                     pct = float(event.get("overall_progress", 0) or 0)
+                    pct = max(0.0, min(100.0, pct))  # BabelDOC can overshoot 100
                     progress_cb(int(total_pages * pct / 100), total_pages)
                 elif etype == "error":
                     raise RuntimeError(str(event.get("error") or "BabelDOC error"))
