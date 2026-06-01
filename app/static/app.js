@@ -180,6 +180,7 @@ async function startTranslation() {
 
   try {
     const resp = await fetch("/api/translate", { method: "POST", body: form });
+    if (resp.status === 401) { location.href = "/login"; return; }
     if (!resp.ok) {
       const detail = await resp.json().catch(() => ({}));
       throw new Error(detail.detail || `服务器错误 (${resp.status})`);
@@ -199,6 +200,7 @@ function pollStatus() {
     if (!currentJobId) return;
     try {
       const resp = await fetch(`/api/jobs/${currentJobId}`);
+      if (resp.status === 401) { location.href = "/login"; return; }
       if (!resp.ok) throw new Error("任务丢失");
       const job = await resp.json();
       updateProgress(job);

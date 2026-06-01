@@ -12,6 +12,8 @@ Design goals (from the product brief):
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import shutil
 import threading
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import translator
@@ -156,6 +158,97 @@ def _run_job(job: Job, params: dict) -> None:
 app = FastAPI(title="Reading with Chinese", version="1.0.0")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# --------------------------------------------------------------------------- #
+# Optional site-wide access password.
+# --------------------------------------------------------------------------- #
+# Set RWC_ACCESS_PASSWORD in the environment (e.g. Render dashboard) to require
+# a password before anyone can use the site. Leave it unset to keep the site
+# open (useful for local development). The password itself is never stored in
+# the repo or sent to the client; only a derived cookie token is used.
+ACCESS_PASSWORD = os.getenv("RWC_ACCESS_PASSWORD", "").strip()
+_AUTH_COOKIE = "rwc_auth"
+_OPEN_PATHS = {"/login", "/api/login", "/api/health", "/favicon.ico"}
+
+
+def _expected_token() -> str:
+    return hashlib.sha256(("rwc::" + ACCESS_PASSWORD).encode()).hexdigest()
+
+
+def _is_authed(request) -> bool:
+    if not ACCESS_PASSWORD:
+        return True
+    token = request.cookies.get(_AUTH_COOKIE, "")
+    return bool(token) and hmac.compare_digest(token, _expected_token())
+
+
+@app.middleware("http")
+async def access_gate(request, call_next):
+    if not ACCESS_PASSWORD or request.url.path in _OPEN_PATHS or _is_authed(request):
+        return await call_next(request)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "需要登录"}, status_code=401)
+    return RedirectResponse("/login")
+
+
+_LOGIN_HTML = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · Reading with Chinese</title>
+<style>
+  html,body{height:100%;margin:0;background:#0f1420;color:#e7ecf5;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{height:100%;display:grid;place-items:center;}
+  .card{background:#171e2e;border:1px solid #2a3350;border-radius:14px;padding:34px 30px;width:320px;
+    box-shadow:0 20px 60px rgba(0,0,0,.45);}
+  .logo{width:46px;height:46px;display:grid;place-items:center;border-radius:12px;font-weight:700;font-size:22px;
+    color:#fff;background:linear-gradient(135deg,#4f7cff,#8a5bff);margin:0 auto 16px;}
+  h1{font-size:18px;text-align:center;margin:0 0 4px;}
+  p{color:#8b95ad;font-size:13px;text-align:center;margin:0 0 22px;}
+  input{width:100%;box-sizing:border-box;background:#1f2740;border:1px solid #2a3350;color:#e7ecf5;
+    border-radius:9px;padding:11px 12px;font-size:15px;outline:none;}
+  input:focus{border-color:#4f7cff;}
+  button{width:100%;margin-top:14px;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600;
+    color:#fff;cursor:pointer;background:linear-gradient(135deg,#4f7cff,#6f8bff);}
+  .err{color:#ff5d6c;font-size:13px;text-align:center;min-height:18px;margin-top:12px;}
+</style></head><body><div class="wrap"><form class="card" id="f">
+  <div class="logo">译</div>
+  <h1>Reading with Chinese</h1>
+  <p>请输入访问口令</p>
+  <input id="pw" type="password" placeholder="访问口令" autofocus autocomplete="current-password">
+  <button type="submit">进入</button>
+  <div class="err" id="err"></div>
+</form></div>
+<script>
+  const f=document.getElementById('f');
+  f.addEventListener('submit',async(e)=>{e.preventDefault();
+    const err=document.getElementById('err');err.textContent='';
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'password='+encodeURIComponent(document.getElementById('pw').value)});
+    if(r.ok){location.href='/';}else{err.textContent='口令错误，请重试';}
+  });
+</script></body></html>"""
+
+
+@app.get("/login")
+def login_page() -> HTMLResponse:
+    return HTMLResponse(_LOGIN_HTML)
+
+
+@app.post("/api/login")
+def login(password: str = Form(...)) -> JSONResponse:
+    if not ACCESS_PASSWORD:
+        return JSONResponse({"ok": True})  # gate disabled
+    if not hmac.compare_digest(password.strip(), ACCESS_PASSWORD):
+        raise HTTPException(status_code=401, detail="口令错误")
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        _AUTH_COOKIE,
+        _expected_token(),
+        max_age=30 * 24 * 3600,
+        httponly=True,
+        samesite="lax",
+    )
+    return resp
 
 
 @app.get("/api/health")

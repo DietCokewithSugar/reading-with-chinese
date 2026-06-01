@@ -16,9 +16,12 @@ ENV PYTHONUNBUFFERED=1 \
     # which needlessly inflates memory on small instances.
     OMP_NUM_THREADS=1 \
     ORT_DISABLE_ALL_OPTIMIZATION=0 \
-    # Memory guards (see app/server.py). Override on larger instances, e.g.
-    # RWC_MAX_CONCURRENCY=6 on a 4 GB box.
+    # Memory guards + max-throughput tuning for a 2 GB instance (see
+    # app/server.py). concurrency is RAM-bound (each chunk runs the layout
+    # model) so it stays low; thread (concurrent API calls per chunk) is cheap,
+    # so it is pushed high for speed. Raise these on larger instances.
     RWC_MAX_CONCURRENCY=2 \
+    RWC_MAX_THREAD=16 \
     RWC_MAX_ACTIVE_JOBS=1
 
 WORKDIR /app

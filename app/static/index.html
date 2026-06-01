@@ -70,7 +70,7 @@
 
       <label class="field">
         <span>每块页数 <em>（长 PDF 自动切分）</em></span>
-        <input id="chunk-size" type="number" min="1" max="50" value="8" />
+        <input id="chunk-size" type="number" min="1" max="50" value="4" />
       </label>
 
       <label class="field">
@@ -79,8 +79,8 @@
       </label>
 
       <label class="field">
-        <span>块内并发请求</span>
-        <input id="thread" type="number" min="1" max="16" value="4" />
+        <span>块内并发请求 <em>（并发 API 请求·加速主力）</em></span>
+        <input id="thread" type="number" min="1" max="32" value="16" />
       </label>
     </div>
     <p class="hint">设置会自动保存到本机浏览器；API Key 不会上传或长期存储在服务器。</p>
